@@ -1,7 +1,20 @@
-import { Controller, Get, Res } from '@nestjs/common';
+import { Controller, Get, Res, Query } from '@nestjs/common';
 import * as puppeteer from 'puppeteer';
 import { Browser } from 'puppeteer';
 import { Response } from 'express';
+const dayjs = require('dayjs')
+
+type Crawler1Query = {
+  /** 开始时间，默认是昨天 */
+  startDate: string;
+  /** 结束时间，默认是昨天 */
+  endDate: string;
+} | {
+  /** 开始时间，默认是昨天 */
+  startDate: undefined;
+  /** 结束时间，默认是昨天 */
+  endDate: undefined;
+}
 
 @Controller('puppeteer')
 export class PuppeteerController {
@@ -15,6 +28,7 @@ export class PuppeteerController {
       });
       const page = await browser.newPage();
       await page.goto('https://www.baidu.com/');
+      console.log('[18]-puppeteer.controller.ts', 232323)
       const buffer = await page.screenshot({
         // path: '1.png',
         type: 'png',
@@ -135,6 +149,72 @@ export class PuppeteerController {
     } catch (err) {
       console.error(err);
       browser?.close();
+    }
+  }
+
+  @Get('crawler1')
+  async crawler1(@Res() res: Response, @Query() query: Crawler1Query) {
+    /** 昨天 */
+    const lastDay: string = dayjs().subtract(1, 'day').format('YYYY-MM-DD')
+    const { startDate = lastDay, endDate = lastDay } = query
+    let browser: Browser | undefined = undefined
+    try {
+      browser = await puppeteer.launch({
+        args: ['--no-sandbox'],
+        defaultViewport: {
+          width: 1980,
+          height: 1080
+        },
+      });
+      let page = await browser.newPage();
+      page.setViewport
+      await page.goto('http://www.cnyiot.com/Mlogin.aspx');
+      await page.type('#username', '999999');
+      await page.type('#password', '123456');
+      await Promise.all([
+        page.click('#subBt'),
+        page.waitForNavigation(),
+      ]);
+      await page.waitForSelector('#lineIc');
+      await page.$eval('#lineIc', (element) => {
+      // @ts-ignore
+        return element.click()
+      })
+      await page.waitForTimeout(2000)
+      // 显示设备下拉框
+      await page.click('.bs-placeholder');
+      const deviceIds: string[] = await page.evaluate(() => {
+        const ids: string[] = []
+        const items = document.querySelectorAll('#bs-select-1 li .text')
+        items.forEach(item => {
+          const innerText = item.innerHTML
+          ids.push(innerText.split(' : ')[0])
+        })
+        return ids
+      })
+      await page.evaluate(({ startDate, endDate, deviceIds }) => {
+        fetch("http://www.cnyiot.com/MOnLineRecord.aspx?Method=getTable", {
+          "headers": {
+            "accept": "application/json, text/javascript, */*; q=0.01",
+            "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,ja;q=0.7",
+            "content-type": "application/x-www-form-urlencoded",
+            "x-requested-with": "XMLHttpRequest"
+          },
+          "referrer": "http://www.cnyiot.com/MOnLineRecord.aspx",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "body": `st=${startDate}&et=${endDate}&metID=${deviceIds.join(',')}&mYMD=2`,
+          "method": "POST",
+          "mode": "cors",
+          "credentials": "include"
+        });
+      }, { startDate, endDate, deviceIds })
+      const finalResponse = await page.waitForResponse(response => response.url() === 'http://www.cnyiot.com/MOnLineRecord.aspx?Method=getTable');
+      res.send(await finalResponse.json())
+      page.close()
+      browser.close()
+    } catch (error) {
+      console.error(error)
+      browser?.close()
     }
   }
 }
